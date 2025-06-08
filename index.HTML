@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <title>Gomoku</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body {
+      background: #161c24;
+      color: #f5f5f5;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      display: flex; flex-direction: column; align-items: center;
+      margin: 0; min-height: 100vh;
+    }
+    h1 {margin-top: 24px; font-size: 2.2em;}
+    #panel {margin: 16px 0; display: flex; gap: 16px; flex-wrap: wrap;}
+    .select-label {font-size: 1.1em;}
+    select, button {
+      font-size: 1em; padding: 7px 10px; border-radius: 7px; border: none;
+      margin-left: 7px;
+    }
+    button {background: #43b0f1; color: #fff; font-weight: bold; cursor: pointer;}
+    button:active {background: #146fbb;}
+    #score {margin: 14px 0 10px 0; font-size: 1.1em;}
+    #gomoku {background: #fffbe9; border: 4px solid #2a2c35; box-shadow: 0 0 14px #222a;}
+    @media (max-width:600px) {
+      h1 {font-size: 1.2em;}
+      #panel, #score {font-size: 0.95em;}
+    }
+  </style>
+</head>
+<body>
+  <h1>Gomoku</h1>
+  <div id="panel">
+    <label class="select-label">Rozmiar:
+      <select id="size">
+        <option value="10">10x10</option>
+        <option value="12">12x12</option>
+        <option value="15" selected>15x15</option>
+        <option value="19">19x19</option>
+      </select>
+    </label>
+    <label class="select-label">Poziom:
+      <select id="diff">
+        <option value="easy">Łatwy</option>
+        <option value="medium" selected>Średni</option>
+        <option value="hard">Trudny</option>
+      </select>
+    </label>
+    <button onclick="restart()">Nowa gra</button>
+  </div>
+  <div id="score"></div>
+  <canvas id="gomoku" width="600" height="600" tabindex="1"></canvas>
+  <div id="info" style="margin:18px;font-size:1.1em;min-height:2em;"></div>
+  <script>
+    // Ustawienia
+    const WIN_COUNT = 5;
+    let boardSize = 15;
+    let cellSize = 36;
+    let board = [];
+    let turn = 'X';
+    let gameOver = false;
+    let moveHistory = [];
+    let winningLine = [];
+    let diff = 'medium';
+    let playerWins = 0, botWins = 0, draws = 0;
+
+    const canvas = document.getElementById('gomoku');
+    const ctx = canvas.getContext('2d');
+    const info = document.getElementById('info');
+    const score = document.getElementById('score');
+
+    // --------- Funkcje Gry ---------
+    function setSizeVars() {
+      cellSize = Math.floor(Math.min(600, window.innerWidth * 0.98) / boardSize);
+      canvas.width = canvas.height = boardSize * cellSize;
+    }
+
+    function newBoard() {
+      board = Array.from({length: boardSize}, () => Array(boardSize).fill('.'));
+      turn = 'X'; gameOver = false; moveHistory = []; winningLine = [];
+      info.textContent = 'Twój ruch! (X)';
+      setSizeVars();
+      drawBoard();
+    }
+
+    function restart() {
+      boardSize = +document.getElementById('size').value;
+      diff = document.getElementById('diff').value;
+      newBoard();
+      updateScore();
+    }
+
+    function updateScore() {
+      score.textContent = `Ty: ${playerWins} | Bot: ${botWins} | Remisy: ${draws}`;
+    }
+
+    function drawBoard() {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      // siatka
+      ctx.strokeStyle = "#bbb";
+      for (let i=0; i<=boardSize; ++i) {
+        ctx.beginPath();
+        ctx.moveTo(i*cellSize, 0);
+        ctx.lineTo(i*cellSize, cellSize*boardSize);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, i*cellSize);
+        ctx.lineTo(cellSize*boardSize, i*cellSize);
+        ctx.stroke();
+      }
+      // symbole
+      for (let i=0; i<boardSize; ++i) for (let j=0; j<boardSize; ++j) {
+        const x = j*cellSize, y = i*cellSize;
+        if (board[i][j]=='X') {
+          ctx.strokeStyle = "#284ca1";
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.moveTo(x+8, y+8); ctx.lineTo(x+cellSize-8, y+cellSize-8); ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x+cellSize-8, y+8); ctx.lineTo(x+8, y+cellSize-8); ctx.stroke();
+        }
+        if (board[i][j]=='O') {
+          ctx.strokeStyle = "#e13a1a";
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.arc(x+cellSize/2, y+cellSize/2, cellSize/2-9, 0, 2*Math.PI);
+          ctx.stroke();
+        }
+      }
+      // wygrana linia
+      if (winningLine.length) {
+        ctx.strokeStyle = "#24e965";
+        ctx.lineWidth = 6;
+        winningLine.forEach(([i,j]) => {
+          ctx.strokeRect(j*cellSize+2, i*cellSize+2, cellSize-4, cellSize-4);
+        });
+      }
+    }
+
+    function isFull() {
+      return board.every(row => row.every(cell => cell != '.'));
+    }
+
+    function checkWin(symbol) {
+      for (let i=0; i<boardSize; ++i) for (let j=0; j<boardSize; ++j) {
+        if (board[i][j] != symbol) continue;
+        // Poziomo
+        if (j+WIN_COUNT<=boardSize && Array(WIN_COUNT).fill().every((_,k)=>board[i][j+k]==symbol))
+          return Array(WIN_COUNT).fill().map((_,k)=>[i,j+k]);
+        // Pionowo
+        if (i+WIN_COUNT<=boardSize && Array(WIN_COUNT).fill().every((_,k)=>board[i+k][j]==symbol))
+          return Array(WIN_COUNT).fill().map((_,k)=>[i+k,j]);
+        // Ukos \
+        if (i+WIN_COUNT<=boardSize && j+WIN_COUNT<=boardSize && Array(WIN_COUNT).fill().every((_,k)=>board[i+k][j+k]==symbol))
+          return Array(WIN_COUNT).fill().map((_,k)=>[i+k,j+k]);
+        // Ukos /
+        if (i+WIN_COUNT<=boardSize && j-WIN_COUNT+1>=0 && Array(WIN_COUNT).fill().every((_,k)=>board[i+k][j-k]==symbol))
+          return Array(WIN_COUNT).fill().map((_,k)=>[i+k,j-k]);
+      }
+      return null;
+    }
+
+    function clickHandler(e) {
+      if (gameOver || turn !== 'X') return;
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.touches ? e.touches[0].clientX : e.clientX;
+      const my = e.touches ? e.touches[0].clientY : e.clientY;
+      let j = Math.floor((mx - rect.left) / cellSize);
+      let i = Math.floor((my - rect.top) / cellSize);
+      if (i<0 || j<0 || i>=boardSize || j>=boardSize || board[i][j]!='.') return;
+      board[i][j] = 'X';
+      moveHistory.push([i,j,'X']);
+      let win = checkWin('X');
+      if (win) {
+        winningLine = win;
+        drawBoard();
+        info.textContent = '🎉 Wygrałeś! Gratulacje!';
+        playerWins++; gameOver = true; updateScore();
+        return;
+      }
+      if (isFull()) {
+        drawBoard();
+        info.textContent = 'Remis!';
+        draws++; gameOver = true; updateScore();
+        return;
+      }
+      turn = 'O';
+      drawBoard();
+      info.textContent = "Ruch bota...";
+      setTimeout(botMove, 370);
+    }
+
+    function botMove() {
+      if (gameOver) return;
+      let [i,j] = botFindMove('O', 'X');
+      board[i][j] = 'O';
+      moveHistory.push([i,j,'O']);
+      let win = checkWin('O');
+      if (win) {
+        winningLine = win;
+        drawBoard();
+        info.textContent = 'Przegrałeś! Bot wygrywa.';
+        botWins++; gameOver = true; updateScore();
+        return;
+      }
+      if (isFull()) {
+        drawBoard();
+        info.textContent = 'Remis!';
+        draws++; gameOver = true; updateScore();
+        return;
+      }
+      turn = 'X';
+      winningLine = [];
+      drawBoard();
+      info.textContent = "Twój ruch!";
+    }
+
+    // ----------- BOT (łatwy/średni/minimax dla trudnego) ---------
+    function botFindMove(bot, opp) {
+      let empty = [];
+      for (let i=0;i<boardSize;++i) for(let j=0;j<boardSize;++j)
+        if (board[i][j]=='.') empty.push([i,j]);
+      // Łatwy: losowy
+      if (diff=="easy") return empty[Math.floor(Math.random()*empty.length)];
+      // Średni: blok/wygrana, heurystyka
+      if (diff=="medium") {
+        for (let [i,j] of empty) {board[i][j]=bot;if(checkWin(bot)){board[i][j]='.';return[i,j];}board[i][j]='.';}
+        for (let [i,j] of empty) {board[i][j]=opp;if(checkWin(opp)){board[i][j]='.';return[i,j];}board[i][j]='.';}
+        let bestScore=-1e9, candidates=[];
+        for (let [i,j] of empty) {
+          board[i][j]=bot;
+          let s = evaluate(bot)-evaluate(opp) + centerBonus(i,j);
+          board[i][j]='.';
+          if (s>bestScore){bestScore=s;candidates=[[i,j]];}
+          else if(s==bestScore) candidates.push([i,j]);
+        }
+        return candidates[Math.floor(Math.random()*candidates.length)];
+      }
+      // Trudny: MINIMAX z głębokością 2 lub 3
+      if (diff=="hard") {
+        let depth = boardSize <= 12 ? 3 : 2; // Głębiej na małych planszach
+        let [score, move] = minimax(board, depth, -1e9, 1e9, true, bot, opp);
+        return move || empty[Math.floor(Math.random()*empty.length)];
+      }
+      // Fallback
+      return empty[Math.floor(Math.random()*empty.length)];
+    }
+
+    function centerBonus(i,j){let c=boardSize/2;return -Math.abs(i-c)-Math.abs(j-c);}
+    function evaluate(sym){
+      let score=0;
+      for(let i=0;i<boardSize;++i)
+        for(let j=0;j<=boardSize-WIN_COUNT;++j){
+          let line = board[i].slice(j,j+WIN_COUNT);
+          if(line.every(cell=>cell==sym||cell=='.') && line.includes(sym))score+=10**line.filter(e=>e==sym).length;
+          line = []; for(let k=0;k<WIN_COUNT;++k) line.push(board[j+k][i]);
+          if(line.every(cell=>cell==sym||cell=='.') && line.includes(sym))score+=10**line.filter(e=>e==sym).length;
+        }
+      for(let i=0;i<=boardSize-WIN_COUNT;++i)
+        for(let j=0;j<=boardSize-WIN_COUNT;++j){
+          let line=[];for(let k=0;k<WIN_COUNT;++k)line.push(board[i+k][j+k]);
+          if(line.every(cell=>cell==sym||cell=='.') && line.includes(sym))score+=10**line.filter(e=>e==sym).length;
+          line=[];for(let k=0;k<WIN_COUNT;++k)line.push(board[i+k][j+WIN_COUNT-1-k]);
+          if(line.every(cell=>cell==sym||cell=='.') && line.includes(sym))score+=10**line.filter(e=>e==sym).length;
+        }
+      return score;
+    }
+
+    function minimax(boardState, depth, alpha, beta, isBot, bot, opp) {
+      let winner = checkWin(bot);
+      if (winner) return [100000 + depth, null];
+      winner = checkWin(opp);
+      if (winner) return [-100000 - depth, null];
+      if (isFull() || depth == 0) return [evaluate(bot)-evaluate(opp), null];
+
+      let moves = [];
+      // Optymalizacja: szukaj ruchów tylko blisko zajętych pól
+      let dirs = [[1,0],[0,1],[1,1],[1,-1],[-1,0],[0,-1],[-1,-1],[-1,1]];
+      let close = {};
+      for(let i=0;i<boardSize;++i)for(let j=0;j<boardSize;++j)
+        if(boardState[i][j]!='.'){
+          for(let [di,dj] of dirs) for(let d=-1;d<=1;++d){
+            let ni=i+di*d,nj=j+dj*d;
+            if(ni>=0&&nj>=0&&ni<boardSize&&nj<boardSize&&boardState[ni][nj]=='.')
+              close[ni+","+nj]=[ni,nj];
+          }
+        }
+      let closeMoves = Object.values(close);
+      moves = closeMoves.length?closeMoves:boardState.flatMap((row,i)=>row.map((c,j)=>c=='.'?[i,j]:null)).filter(x=>x);
+
+      let bestScore = isBot ? -1e9 : 1e9, bestMove = null;
+      for (let [i,j] of moves) {
+        boardState[i][j] = isBot ? bot : opp;
+        let [score] = minimax(boardState, depth-1, alpha, beta, !isBot, bot, opp);
+        boardState[i][j] = '.';
+        if (isBot) {
+          if (score > bestScore) {bestScore = score; bestMove = [i,j];}
+          alpha = Math.max(alpha, score);
+          if (beta <= alpha) break;
+        } else {
+          if (score < bestScore) {bestScore = score; bestMove = [i,j];}
+          beta = Math.min(beta, score);
+          if (beta <= alpha) break;
+        }
+      }
+      return [bestScore, bestMove];
+    }
+
+    // --- Inicjacja ---
+    canvas.addEventListener('click', clickHandler);
+    canvas.addEventListener('touchstart', function(e){clickHandler(e);e.preventDefault();});
+    window.addEventListener('resize', ()=>{setSizeVars();drawBoard();});
+    document.getElementById('size').addEventListener('change',restart);
+    document.getElementById('diff').addEventListener('change',restart);
+    newBoard();
+    updateScore();
+  </script>
+</body>
+</html>
